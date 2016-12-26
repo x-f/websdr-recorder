@@ -5,16 +5,36 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 import time
 from time import gmtime, strftime
+import datetime
 import os, glob
+import demjson
+import sys
+
+
+gmtimestamp = gmtime()
 
 websdr_url = "http://websdr.ewi.utwente.nl:8901/"
 websdr_freq = "8992.0"
-record_duration = 70 * 60 # in seconds
 record_filedir = os.path.dirname(os.path.abspath(__file__)) + "/recordings"
-record_filename = "websdr_recording_" + strftime("%Y%m%d-%H%M", gmtime()) + "Z_" + websdr_freq + "kHz"
+record_filename = "rec_" + strftime("%Y%m%d-%H%M", gmtimestamp) + "Z_" + websdr_freq + "kHz"
 firefox_tmpdir = "/tmp/mozilla_x-f0/"
 
+if len(sys.argv) > 1:
+  record_duration = int(sys.argv[1]) # minutes
+else:
+  record_duration = 90 # minutes
+
+record_duration = record_duration * 60 # in seconds
+
 # ---------------------------------------------------------
+
+runtime_status_file = os.path.dirname(os.path.abspath(__file__)) + "/runtime_status.json"
+# 0 - stopped, 1 - running, -1 - stop
+runtime_status = {
+  "status": 1
+}
+open(runtime_status_file, 'w').write(demjson.encode(runtime_status))
+
 
 def log(msg):
   
@@ -73,7 +93,22 @@ recbtn = browser.find_element_by_id("recbutton")
 log("start recording..")
 recbtn.click()
 
-time.sleep(record_duration)
+# time.sleep(record_duration)
+recording_stop = datetime.datetime.now() + datetime.timedelta(seconds=record_duration)
+while True:
+
+  if datetime.datetime.now() < recording_stop:
+    tmp = open(runtime_status_file, 'r').read()
+    runtime_status = demjson.decode(tmp)
+    if runtime_status["status"] == -1:
+      log("stop, stop, stop")
+      break
+    else:
+      # print "continue"
+      time.sleep(10)
+  else:
+    break
+
 # browser.save_screenshot("./wsdr-2.jpg")
 
 # stop
@@ -85,7 +120,7 @@ recfile = browser.find_element_by_css_selector("#reccontrol a")
 
 log("downloading..")
 recfile.click()
-# not known when download finishes, just sleep and hope
+# unknown when download finishes, just sleep and hope
 time.sleep(5)
 log("done")
 # browser.save_screenshot("./wsdr-4.jpg")
@@ -109,5 +144,9 @@ cmd = "ffmpeg -loglevel error -hide_banner -i " + record_filedir + "/" + record_
 os.system(cmd)
 # print cmd
 log(record_filename + ".mp3 (" + str(os.path.getsize(record_filedir + "/" + record_filename + ".mp3")/1024) + "K)")
+
+
+runtime_status["status"] = 0
+open(runtime_status_file, 'w').write(demjson.encode(runtime_status))
 
 log("done")
