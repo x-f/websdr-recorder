@@ -19,6 +19,7 @@ record_filedir = os.path.dirname(os.path.abspath(__file__)) + "/recordings"
 record_filename = "rec_" + strftime("%Y%m%d-%H%M", gmtimestamp) + "Z_" + websdr_freq + "kHz"
 firefox_tmpdir = "/tmp/mozilla_x-f0/"
 
+
 if len(sys.argv) > 1:
   record_duration = int(sys.argv[1]) # minutes
 else:
@@ -31,13 +32,14 @@ record_duration = record_duration * 60 # in seconds
 runtime_status_file = os.path.dirname(os.path.abspath(__file__)) + "/runtime_status.json"
 # 0 - stopped, 1 - running, -1 - stop
 runtime_status = {
-  "status": 1
+  "running": 1,
+  "extra-minutes": 0,
+  "frequency": websdr_freq
 }
 open(runtime_status_file, 'w').write(demjson.encode(runtime_status))
 
 
 def log(msg):
-  
   logmsg = strftime("%Y-%m-%d %H:%M:%S", gmtime())
   logmsg = "[" + logmsg + "] " + str(msg)
   # cmd = "echo \"" + logmsg + "\" >> " + file
@@ -95,17 +97,41 @@ recbtn.click()
 
 # time.sleep(record_duration)
 recording_stop = datetime.datetime.now() + datetime.timedelta(seconds=record_duration)
+log("recording_stop=" + str(recording_stop))
+
 while True:
 
   if datetime.datetime.now() < recording_stop:
+
     tmp = open(runtime_status_file, 'r').read()
     runtime_status = demjson.decode(tmp)
-    if runtime_status["status"] == -1:
+    
+    # terminate recording
+    if runtime_status["running"] == -1:
       log("stop, stop, stop")
       break
-    else:
-      # print "continue"
-      time.sleep(10)
+      
+    # extend duration
+    elif runtime_status["extra-minutes"] != 0:
+      log("extra-minutes=" + str(runtime_status["extra-minutes"]))
+      recording_stop = recording_stop + datetime.timedelta(minutes=runtime_status["extra-minutes"])
+      log("recording_stop=" + str(recording_stop))
+
+      # save runtime_status
+      runtime_status["extra-minutes"] = 0
+      open(runtime_status_file, 'w').write(demjson.encode(runtime_status))
+
+    # change frequency
+    elif runtime_status["frequency"] != websdr_freq:
+      log("frequency=" + str(runtime_status["frequency"]))
+      websdr_freq = runtime_status["frequency"]
+      freq = browser.find_element_by_name("frequency")
+      freq.clear()
+      freq.send_keys(websdr_freq)
+      freq.send_keys(Keys.ENTER)
+      
+    time.sleep(10)
+
   else:
     break
 
@@ -146,7 +172,7 @@ os.system(cmd)
 log(record_filename + ".mp3 (" + str(os.path.getsize(record_filedir + "/" + record_filename + ".mp3")/1024) + "K)")
 
 
-runtime_status["status"] = 0
+runtime_status["running"] = 0
 open(runtime_status_file, 'w').write(demjson.encode(runtime_status))
 
 log("done")
